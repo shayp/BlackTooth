@@ -2,7 +2,8 @@
 <html>
 <head>
 
-    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.2.3/jquery.min.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.11.4/jquery-ui.min.js"></script>
 
     <link rel="stylesheet" type="text/css" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css" />
     <script type="text/javascript" src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js"></script>
@@ -23,6 +24,11 @@
     </style>
 </head>
 <body>
+    <script id="dev-detectedbox" type="text/x-handlebars-template">
+        <div id="devDetectedBox_{{mac}}" class="dev-detected" onclick="selectDevice('{{mac}}')">
+            <p class="center-aligner">{{name}}</p>
+        </div> 
+    </script>
     <script id="dev-infocontainerbox" type="text/x-handlebars-template">
         <div id="devInfoContainer_{{mac}}" class="dev-InfoContainer row">
             <p class="center-aligner"><b><u>Device Information</u></b></p><br />
@@ -59,7 +65,7 @@
                     <td class="dev-info-cell">{{owner}}</td>
                 </tr>
                 <tr>
-                    <td class="dev-info-cell">Approx. Distance</td>
+                    <td class="dev-info-cell">Est. Distance</td>
                     <td class="dev-info-cell">{{distance}}</td>
                 </tr>
             </table>
@@ -72,7 +78,7 @@
                     <p class="center-aligner">
                         <button id="btnScan">Scan for devices</button><br />
                         <b><u>Detected Devices</u></b>
-                    </p>
+                    </p>       
                 </div>
             </div>
             <div id="deviceOperationsView" class="col-md-2">
@@ -142,6 +148,43 @@
         var devInfoTableTemplate;
         var devInfoImgTemplate;
         var devInfoContainerTemplate;
+        var devDetectedBoxTemplate;
+
+        function selectDevice(mac) {
+            if ($("div[data-selectedDev]").length) {
+                $("div[data-selectedDev]").stop().animate({ backgroundColor: "rgba(0, 255, 33, 0)" }, "slow");
+                $("div[data-selectedDev]").removeAttr("data-selectedDev");
+
+                if ($("div[data-shownInfo]").length) {
+                    $("div[data-shownInfo]").stop().fadeOut();
+                    $("div[data-shownInfo]").removeAttr("data-shownInfo");
+                }
+            }
+
+            $("#devDetectedBox_" + mac).attr("data-selectedDev", '');
+            $("#devInfoContainer_" + mac).attr("data-shownInfo", '');
+            $("#devDetectedBox_" + mac).stop().animate({ backgroundColor: "rgba(0, 255, 33, 1)" }, "slow");
+            $("#devInfoContainer_" + mac).stop().fadeIn();
+        }
+
+        function addDevice(name, vendor, type, mac, owner, img, capabilities) {
+            addDeviceDetectedBox(name, mac);
+            addDeviceInfoBox(name, vendor, type, mac, owner, img, capabilities);
+
+            if (0 == $("div[data-selectedDev]").length) {
+                selectDevice(mac.replace(/:/g, "_"));
+            }
+            else {
+                $("#devInfoContainer_" + mac.replace(/:/g, "_")).hide();
+            }
+        }
+
+        function addDeviceDetectedBox(name, mac) {
+            var detectedBoxCtx = { name: name, mac: mac.replace(/:/g, "_") };
+            var detectedBoxHtml = devDetectedBoxTemplate(detectedBoxCtx);
+
+            $("#devicesView").append(detectedBoxHtml);
+        }
 
         function addDeviceInfoBox(name, vendor, type, mac, owner, img, capabilities) {
             // 1) Create the table div
@@ -178,11 +221,14 @@
             devInfoTableTemplate = Handlebars.compile($("#dev-infobox").html());
             devInfoImgTemplate = Handlebars.compile($("#dev-imgbox").html());
             devInfoContainerTemplate = Handlebars.compile($("#dev-infocontainerbox").html());
+            devDetectedBoxTemplate = Handlebars.compile($("#dev-detectedbox").html());
 
             // -- testing infobox addition --
             var capabilities = ["Networking", "Not doing anything", "Telephony"];
+            var capabilities2 = ["Networking", "Causing trouble", "Telephony"];
 
-            addDeviceInfoBox("TestPhone", "Testers Inc", "Cellular (Smartphone)", "BA:DB:AD:BA:DB:AD", "Test", "iphone6plus_gold_portrait.png", capabilities);
+            addDevice("TestPhone", "Testers Inc", "Cellular (Smartphone)", "BA:DB:AD:BA:DB:AD", "Test", "iphone6plus_gold_portrait.png", capabilities);
+            addDevice("AnotherPhone", "Nonsense Inc", "Cellular (Smartphone)", "FU:CK:TH:IS:SH:IT", "Dude", "iphone6plus_gold_portrait.png", capabilities2);
         })
 
     // First, create an object containing LatLng and population for each city.

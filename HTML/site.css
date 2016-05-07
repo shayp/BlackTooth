@@ -51,6 +51,13 @@ div.dev-InfoContainer {
     border: 2px solid;
     border-radius: 10px;
     background-color: rgba(255, 255, 255, 0.6);
+    overflow: hidden;
+}
+
+div.dev-detected {
+    border-right: 2px solid;
+    border-left: 2px solid;
+    border-radius: 15px;
 }
 
 table.tbl-DevInfo, td.dev-info-cell {
