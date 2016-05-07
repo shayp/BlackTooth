@@ -1,0 +1,65 @@
+﻿p.center-aligner {
+    text-align: center;
+}
+
+html, #masterContainer {
+    height: 100%;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    /*background: linear-gradient(rgba(234, 234, 234, 0.7), rgba(234, 234, 234, 0.7)), url("BG.jpg") ;   */
+    background: linear-gradient(rgba(239, 236, 226, 0.7), rgba(239, 236, 226, 0.7)), url("BG.jpg") ;   
+    background-size: auto;
+    background-position:center;
+    background-repeat: repeat-x;
+}
+
+btn#btnScan {
+    align-content:center;
+}
+
+div#devContentContainer {
+    height: 350px;
+}
+
+div#devicesView {
+    display: inline-block;
+    border: 2px solid;
+    border-radius: 10px;
+    height: 350px;
+    padding-top: 5px;
+    background-color: rgba(255, 255, 255, 0.6);
+}
+
+div#deviceOperationsView {
+    display: inline-block;
+    border: 2px solid;
+    border-radius: 10px;
+    height: 350px;
+    background-color: rgba(255, 255, 255, 0.6);
+}
+
+#map {
+    height: 350px;
+    border: 2px solid;
+    border-radius: 10px;
+}
+
+div.dev-InfoContainer {
+    border: 2px solid;
+    border-radius: 10px;
+    background-color: rgba(255, 255, 255, 0.6);
+}
+
+table.tbl-DevInfo, td.dev-info-cell {
+    margin-bottom: 5px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+img.dev-img {
+    max-height: 100%;
+    max-width: 100%;
+}
