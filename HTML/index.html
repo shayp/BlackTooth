@@ -4,12 +4,13 @@
 
     <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
     <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.11.4/jquery-ui.min.js"></script>
+    <script src="https://www.google.com/jsapi"></script>
 
     <link rel="stylesheet" type="text/css" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css" />
     <script type="text/javascript" src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js"></script>
 
     <script src="/Scripts/handlebars.js"></script>
-
+	<script src="/Scripts/jquery.ajax-cross-origin.min.js"></script>
     <link rel="stylesheet" type="text/css" href="site.css" />
     <title>BlackTooth</title>
     
@@ -22,35 +23,42 @@
             padding: 0;
         }
     </style>
+
+    <script type="text/javascript">
+	
+	google.load('search', '1');
+	
+	var imageSearch;
+    </script>	
 </head>
 <body>
     <script id="dev-detectedbox" type="text/x-handlebars-template">
-        <div id="devDetectedBox_{{mac}}" class="dev-detected" onclick="selectDevice('{{mac}}')">
+        <div id="devDetectedBox_{{mac}}" class="dev-detected" onclick="selectDevice('{{mac}}')" data-added-dev-info>
             <p class="center-aligner">{{name}}</p>
         </div> 
     </script>
     <script id="dev-infocontainerbox" type="text/x-handlebars-template">
-        <div id="devInfoContainer_{{mac}}" class="dev-InfoContainer row">
+        <div id="devInfoContainer_{{mac}}" class="dev-InfoContainer row" data-added-dev-info>
             <p class="center-aligner"><b><u>Device Information</u></b></p><br />
         </div>
     </script>
     <script id="dev-imgbox" type="text/x-handlebars-template">
-        <div class="col-md-4">
+        <div class="col-md-4" data-added-dev-info>
             <p class="center-aligner"><b><u>Associated Device Image</u></b></p>
-            <img src="{{img}}" class="dev-img" />
+            <img id="devimg_{{mac}}" src="{{img}}" class="dev-img" />
         </div>
     </script>
     <script id="dev-infobox" type="text/x-handlebars-template">
-        <div id="devInfoTable_{{bdaddr}}" class="col-md-4">
+        <div id="devInfoTable_{{bdaddr_u}}" class="col-md-4" data-added-dev-info>
             <p class="center-aligner"><b><u>Details:</u></b></p>
-            <table id="tblDevInfo_{{bdaddr}}" class="tbl-DevInfo">
+            <table id="tblDevInfo_{{bdaddr_u}}" class="tbl-DevInfo">
                 <tr>
                     <td class="dev-info-cell">Device Name</td>
                     <td class="dev-info-cell">{{name}}</td>
                 </tr>
                 <tr>
                     <td class="dev-info-cell">Vendor</td>
-                    <td class="dev-info-cell">{{vendor}}</td>
+                    <td id="devvendor_{{bdaddr_u}}" class="dev-info-cell">{{vendor}}</td>
                 </tr>
                 <tr>
                     <td class="dev-info-cell">Device Type</td>
@@ -169,7 +177,7 @@
 
         function addDevice(name, vendor, type, mac, owner, img, capabilities) {
             addDeviceDetectedBox(name, mac);
-            addDeviceInfoBox(name, vendor, type, mac, owner, img, capabilities);
+            addDeviceInfoBox(name, "Looking up...", type, mac, owner, img, capabilities);
 
             if (0 == $("div[data-selectedDev]").length) {
                 selectDevice(mac.replace(/:/g, "_"));
@@ -188,7 +196,7 @@
 
         function addDeviceInfoBox(name, vendor, type, mac, owner, img, capabilities) {
             // 1) Create the table div
-            var devInfoTableCtx = { name: name, vendor: vendor, type: type, bdaddr: mac, owner: owner, distance: "estimating..." };
+            var devInfoTableCtx = { name: name, vendor: vendor, type: type, bdaddr: mac, bdaddr_u: mac.replace(/:/g, "_"), owner: owner, distance: "estimating..." };
             var devInfoTableDivHtml = devInfoTableTemplate(devInfoTableCtx);
 
             // 2) Create the capabilities div
@@ -202,7 +210,7 @@
             devInfoCapabilitiesHtml += "</ul></div>";
 
             // 3) Add the device image div
-            var devInfoDevImgCtx = { img: img };
+            var devInfoDevImgCtx = {mac: mac.replace(/:/g, "_"), img: img };
             var devInfoImgDivHtml = devInfoImgTemplate(devInfoDevImgCtx);
 
             // 4) Make one grand div
@@ -217,18 +225,178 @@
             $("#devInfoContainer_" + underscoredMac).append(devInfoImgDivHtml);
         }
 
+	function locateDevImg(devname, vendor, major, minor) {
+		var query_string = "png ";
+
+		if ("Unavailable" === getOwner(devname)) {
+			query_string += devname + " ";
+		}
+		else {
+			query_string += vendor + " ";
+		}
+		
+		query_string += major + " " + minor;
+
+		return query_string;
+	}
+
+	function locateLocalDevImg(vendor, major) {
+		if (-1 != vendor.indexOf("Apple")) {
+			if (-1 != major.indexOf("Phone")) {
+				return "Apple_Phone.png";
+			}
+		}
+		else if (-1 != vendor.indexOf("Samsung")) {
+			if (-1 != major.indexOf("Phone")) {
+				return "Samsung_Phone.png";
+			}
+		}
+		else if (-1 != vendor.indexOf("LG")) {
+			if (-1 != major.indexOf("Phone")) {
+				return "LG_Phone.png";
+			}
+		}
+
+		return "";
+	}
+
+	function acquireDevImage(devname, vendor, major, minor, devmac) {
+	
+		var localImg = locateLocalDevImg(vendor, major);
+	
+		if ("" != localImg) {
+			$("#devimg_" + devmac.replace(/:/g, "_")).attr("src", localImg);
+			return;
+		}
+
+		var query = locateDevImg(devname, vendor, major, minor);
+
+		query += " -" + devmac;
+
+		$.ajax({
+		url: "https://www.googleapis.com/customsearch/v1?key=AIzaSyAvvpLfPx492azai8gFDrMPwm83FV91p4A&cx=015401748315130044650:liplpje5yfm&fileType=png&searchType=image&callback=imgSearchDone&q=" + query,
+		error: function(x,e,y) {
+			alert("Snap: " + e + y);
+		}});
+	
+	}
+
+	function getOwner(devname) {
+		// Does it have 's in it?
+		if (1 <= devname.indexOf("\'s")) {
+			var name_end = devname.indexOf("\'s");
+			return devname.substr(0, name_end - 1);
+		}
+		// Does it have any brackets?
+		else if (1 <= devname.indexOf("(")) {
+			var name_end = devname.indexOf("(");
+			return devname.substr(0, name_end - 1);
+		}
+		else {
+			return "Unavailable";
+		}
+	}
+
+	function lookupVendorAndImg(name, devclass_major, devclass_minor, devmac) {
+		$.ajax({
+		url: "http://www.macvendors.co/api/jsonp/" + devmac.replace(/:/g, "-"),	
+		dataType: "jsonp",
+		crossDomain: true,
+		success: function(res) {
+			$("#devvendor_" + devmac.replace(/:/g, "_")).text(res.result.company);
+
+			acquireDevImage(name, res.result.company, devclass_major, devclass_minor, devmac);
+		},
+		error: function(x, e, y) {
+			alert("Vendor lookup failed: " + e + y);
+		}
+	});	
+	}
+
+	function unloadScanResults(scan_results) {
+		//alert(scan_results);
+/*Buhrd ,78:D7:5F:A2:7E:4A,0c027a,Networking:Capturing:Object Transfer:Audio:Telephony,Phone,Smartphone,[NO-VERNAME],0x4109,Broadcom Corporation,6*/
+
+		if (scan_results.length == 1) alert("No devices located!");		
+
+		var result_records = scan_results.split("\n");
+
+		result_records.splice(0, 1); // Remove the empty \n item in the beginning
+		var i;
+
+		for (i = 0; i < result_records.length; i++) {
+			var record_info = result_records[i].split(",");
+
+			var name = record_info[0];
+			var mac = record_info[1];
+			var devclass = record_info[2];
+			var capabilities = record_info[3].split(":");
+			var devclass_major = record_info[4];
+			var devclass_minor = record_info[5];
+			var firmware_vername = record_info[6];
+			var firmware_version = record_info[7];
+			var firmware_manufac = record_info[8];
+			var rssi = record_info[9];
+
+			addDevice(name, "Calculating...", devclass_major + " (" + devclass_minor + ")", mac, getOwner(name), "default.png", capabilities);
+			lookupVendorAndImg(name, devclass_major, devclass_minor, mac);
+		}
+	};
+
+	$("#btnScan").click(function() {
+		$("div[data-added-dev-info]").remove();		
+
+		$.ajax({
+			url: "/cgi-bin/devscan.cgi",
+			success: function(result) {
+				unloadScanResults(result);
+			},
+			error: function (x, e, y) {
+				alert("Oh snap: " + e + y);
+			}
+		}); 
+	});
+
+	function imgSearchDone(response) {
+		if (response.items.length > 0) {
+			var imgPath = response.items[0].link;
+
+			var mac_offset = response.queries.request[0].searchTerms.indexOf("-") + 1;
+			var terms_end = response.queries.request[0].searchTerms.length - 1;
+			var devmac = response.queries.request[0].searchTerms.substr(mac_offset, terms_end);
+
+			$("#devimg_" + devmac.replace(/:/g, "_")).attr("src", imgPath);	
+		}
+	}
+
         $(function () {
             devInfoTableTemplate = Handlebars.compile($("#dev-infobox").html());
             devInfoImgTemplate = Handlebars.compile($("#dev-imgbox").html());
             devInfoContainerTemplate = Handlebars.compile($("#dev-infocontainerbox").html());
             devDetectedBoxTemplate = Handlebars.compile($("#dev-detectedbox").html());
 
-            // -- testing infobox addition --
-            var capabilities = ["Networking", "Not doing anything", "Telephony"];
-            var capabilities2 = ["Networking", "Causing trouble", "Telephony"];
+       /*
+	$.ajax({
+		url: "http://www.macvendors.co/api/jsonp/78-D7-5F-A2-7E-4A",	
+		dataType: "jsonp",
+		crossDomain: true,
+		success: function(res) {
+			alert("Company: " + res.result.company);
+		},
+		error: function(x, e, y) {
+			alert("Vendor lookup failed: " + e + y);
+		}
+	});		
 
-            addDevice("TestPhone", "Testers Inc", "Cellular (Smartphone)", "BA:DB:AD:BA:DB:AD", "Test", "iphone6plus_gold_portrait.png", capabilities);
-            addDevice("AnotherPhone", "Nonsense Inc", "Cellular (Smartphone)", "FU:CK:TH:IS:SH:IT", "Dude", "iphone6plus_gold_portrait.png", capabilities2);
+            $.ajax({
+                url: "/cgi-bin/devscan.cgi",
+                success: function (result) {
+                    alert(result);
+                },
+                error: function (x, e, y) {
+                    alert("Oh snap: " + e + y);
+                }
+            }); */
         })
 
     // First, create an object containing LatLng and population for each city.
@@ -243,21 +411,35 @@
     function initMap() {
         var myLatLng = { lat: 32.078099, lng: 34.779370 };
 
+
         // Create the map.
         var map = new google.maps.Map(document.getElementById('map'), {
-                        zoom: 17,
-                        center: myLatLng,
-                        mapTypeId: google.maps.MapTypeId.TERRAIN
+            zoom: 17,
+            center: myLatLng,
+            mapTypeId: google.maps.MapTypeId.TERRAIN
         });
 
-        var marker = new google.maps.Marker({
-                        position: myLatLng,
-                        map: map,
-                        title: 'Hello World!'
-        });
-
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(function (position) {
+                currentLocation = { lat: position.coords.latitude, lng: position.coords.longitude };
+                initialLocation = new google.maps.LatLng(position.coords.latitude, position.coords.longitude);
+                map.setCenter(initialLocation);
+                var marker = new google.maps.Marker({
+                    map: map,
+                    position: initialLocation,
+                    title: 'Current Location',
+                    zIndex: google.maps.Marker.MAX_ZINDEX + 1
+                });
+            },
+            function (e) {
+                var a = e;
+            },
+            { timeout: 10000 }
+            );
+        }
         // Construct the circle for each value in citymap.
         // Note: We scale the area of the circle based on the population.
+        /*
         for (var city in citymap) {
 
             // Add the circle for this city to the map.
@@ -271,11 +453,12 @@
                 center: citymap[city].center,
                 radius: 100
             });
-        }
+        } */
     }
     </script>
     <script async defer
             src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAgW2HRWEQJn34UiZV9TEaEtAWQW-m5W3k&callback=initMap">
     </script>
+	<!--<script src="https://www.googleapis.com/customsearch/v1?key=AIzaSyAvvpLfPx492azai8gFDrMPwm83FV91p4A&cx=015401748315130044650:liplpje5yfm&q=dickbutt&fileType=png&searchType=image&callback=imgSearchDone"></script>-->
 </body>
 </html>
