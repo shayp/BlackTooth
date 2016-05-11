@@ -1,0 +1,12 @@
+1. Install apache
+2. enable cgi: a2enmod cgi
+3. Set cgi directory: in /etc/apache2/apache2.conf:
+ScriptAlias "/cgi-bin/" "/var/www/cgi-bin/"
+
+<Directory "/var/www/cgi-bin">
+AllowOverride None
+AddHandler cgi-script .cgi
+Options ExecCGI
+Order allow,deny
+Allow from all
+</Directory>
