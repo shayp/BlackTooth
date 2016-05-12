@@ -32,6 +32,11 @@
     </script>	
 </head>
 <body>
+    <script id="log-detectionentry" type="text/x-handlebars-template">
+	<p class="detection-log-entry" data-detected-mac="{{mac}}">
+		<u>{{day}}/{{month}}/{{year}} {{hour}}:{{minutes}}:{{seconds}}:</u><i>{{devname}}</i> ({{mac}}) was detected at <b>{{distance}}</b> meters.
+	</p>
+    </script>
     <script id="dev-detectedbox" type="text/x-handlebars-template">
         <div id="devDetectedBox_{{mac}}" class="dev-detected" onclick="selectDevice('{{mac}}')" data-added-dev-info>
             <p class="center-aligner">{{name}}</p>
@@ -81,7 +86,7 @@
     </script>
     <div id="masterContainer" class="container">
         <div id="devContentContainer" class="row">
-            <div id="devicesView" class="col-md-5">
+            <div id="devicesView" class="col-md-3">
                 <div>
                     <p class="center-aligner">
                         <button id="btnScan">Scan for devices</button><br />
@@ -89,12 +94,15 @@
                     </p>       
                 </div>
             </div>
-            <div id="deviceOperationsView" class="col-md-2">
+            <div id="deviceOperationsView" class="col-md-4">
                 <p class="center-aligner">
                     <b><u>Operations</u></b><br />
                     <button>Save Traffic</button><br />
-                    <button>Attempt MITM</button>
+                    <button>Attempt MITM</button><br />
                 </p>
+
+		<p class="center-aligner"><b><u>Detection Log</b></u></p>
+		<div id="detectionLog"></div>
             </div>
             <div id="map" class="col-md-5"></div>
         </div>
@@ -157,6 +165,7 @@
         var devInfoImgTemplate;
         var devInfoContainerTemplate;
         var devDetectedBoxTemplate;
+	var logEntryTemplate;
 
         function selectDevice(mac) {
             if ($("div[data-selectedDev]").length) {
@@ -173,11 +182,51 @@
             $("#devInfoContainer_" + mac).attr("data-shownInfo", '');
             $("#devDetectedBox_" + mac).stop().animate({ backgroundColor: "rgba(0, 255, 33, 1)" }, "slow");
             $("#devInfoContainer_" + mac).stop().fadeIn();
+	    selectDevCircle(mac.replace(/_/g, ":"));
         }
 
-        function addDevice(name, vendor, type, mac, owner, img, capabilities) {
+	var dev_circles = {};
+	var map;
+
+	function clearMapCircles() {
+		for (var i in dev_circles) {
+			if(i != "length" && dev_circles.hasOwnProperty(i))
+				dev_circles[i].setMap(null);
+				dev_circles[i] = null;
+		}
+
+		dev_circles = {};
+	}
+
+	function selectDevCircle(mac) {
+
+		for (var i in dev_circles) {
+			if(i != "length" && dev_circles.hasOwnProperty(i))
+				dev_circles[i].setMap(null);
+		}
+
+		dev_circles[mac].setMap(map);
+	}
+
+	function addDeviceCircle(mac, distance) {
+	dev_circles[mac] = new google.maps.Circle({
+		        strokeColor: '#FF0000',
+		        strokeOpacity: 0.8,
+		        strokeWeight: 2,
+		        fillColor: '#FF0000',
+		        fillOpacity: 0.35,
+		        map: map,
+		        center: map.getCenter(),
+		        radius: distance
+		    });
+
+	dev_circles[mac].setMap(null);
+	}
+
+        function addDevice(name, vendor, type, mac, owner, img, rssi, distance, capabilities) {
             addDeviceDetectedBox(name, mac);
-            addDeviceInfoBox(name, "Looking up...", type, mac, owner, img, capabilities);
+            addDeviceInfoBox(name, "Looking up...", type, mac, owner, img, distance, capabilities);
+   	    addDeviceCircle(mac, rssi2distance(rssi));
 
             if (0 == $("div[data-selectedDev]").length) {
                 selectDevice(mac.replace(/:/g, "_"));
@@ -185,6 +234,13 @@
             else {
                 $("#devInfoContainer_" + mac.replace(/:/g, "_")).hide();
             }
+
+	    // Add to log
+	    var date = new Date();
+	    var entryCtx = { day: date.getDate(), month: date.getMonth() + 1, year: date.getFullYear(), hour: date.getHours(), minutes: date.getMinutes(), seconds: date.getSeconds(), devname: name, mac: mac, distance: rssi2distance(rssi) };
+	    var entryHtml = logEntryTemplate(entryCtx);
+
+	    $("#detectionLog").append(entryHtml);
         }
 
         function addDeviceDetectedBox(name, mac) {
@@ -194,9 +250,9 @@
             $("#devicesView").append(detectedBoxHtml);
         }
 
-        function addDeviceInfoBox(name, vendor, type, mac, owner, img, capabilities) {
+        function addDeviceInfoBox(name, vendor, type, mac, owner, img, distance, capabilities) {
             // 1) Create the table div
-            var devInfoTableCtx = { name: name, vendor: vendor, type: type, bdaddr: mac, bdaddr_u: mac.replace(/:/g, "_"), owner: owner, distance: "estimating..." };
+            var devInfoTableCtx = { name: name, vendor: vendor, type: type, bdaddr: mac, bdaddr_u: mac.replace(/:/g, "_"), owner: owner, distance: distance };
             var devInfoTableDivHtml = devInfoTableTemplate(devInfoTableCtx);
 
             // 2) Create the capabilities div
@@ -232,7 +288,22 @@
 			query_string += devname + " ";
 		}
 		else {
+			var actual_devname_guess = "";
+
+			// Device name in brackets? - make sure enough characters to copy
+			if (-1 != devname.indexOf("(") && 
+			    -1 != devname.indexOf(")") && 
+			    ((devname.indexOf(")") - devname.indexOf("(")) > 1)) {
+				actual_devname_guess = devname.substr(devname.indexOf("(") + 1, devname.indexOf(")") - 1);
+			}
+			// Device name after 's? - make sure enough characters to copy
+			else if (-1 != devname.indexOf("\'s") && (devname.length - devname.indexOf("\'s")) > 2) {
+				actual_devname_guess = devname.substr(devname.indexOf("\'s") + 3, devname.length - 1);
+			}
+
 			query_string += vendor + " ";
+
+			if (actual_devname_guess != "") actual_devname_guess + " ";
 		}
 		
 		query_string += major + " " + minor;
@@ -285,7 +356,7 @@
 		// Does it have 's in it?
 		if (1 <= devname.indexOf("\'s")) {
 			var name_end = devname.indexOf("\'s");
-			return devname.substr(0, name_end - 1);
+			return devname.substr(0, name_end);
 		}
 		// Does it have any brackets?
 		else if (1 <= devname.indexOf("(")) {
@@ -313,18 +384,35 @@
 	});	
 	}
 
+	function rssi2distance(rssi) {
+		// TODO: TEMPORARY
+		
+		// returned RSSI from BlueZ is distance from 100% reception
+		if (rssi < 15) return 5;
+		else if (rssi < 30) return 10;
+		else if (rssi < 60) return 18;
+		else if (rssi < 100) return 25;
+		else if (rssi < 160) return 40;
+		else if (rssi < 220) return 80;
+		else if (rssi < 257) return 120;
+	}
+
 	function unloadScanResults(scan_results) {
 		//alert(scan_results);
 /*Buhrd ,78:D7:5F:A2:7E:4A,0c027a,Networking:Capturing:Object Transfer:Audio:Telephony,Phone,Smartphone,[NO-VERNAME],0x4109,Broadcom Corporation,6*/
 
-		if (scan_results.length == 1) alert("No devices located!");		
+		if (scan_results.length == 1) {
+			alert("No devices located!");		
+			return;
+		}
 
 		var result_records = scan_results.split("\n");
 
-		result_records.splice(0, 1); // Remove the empty \n item in the beginning
 		var i;
 
 		for (i = 0; i < result_records.length; i++) {
+			if (result_records[i] === "") continue;
+
 			var record_info = result_records[i].split(",");
 
 			var name = record_info[0];
@@ -333,26 +421,43 @@
 			var capabilities = record_info[3].split(":");
 			var devclass_major = record_info[4];
 			var devclass_minor = record_info[5];
-			var firmware_vername = record_info[6];
-			var firmware_version = record_info[7];
-			var firmware_manufac = record_info[8];
-			var rssi = record_info[9];
 
-			addDevice(name, "Calculating...", devclass_major + " (" + devclass_minor + ")", mac, getOwner(name), "default.png", capabilities);
+			var firmware_vername = "Unavailable";
+			var firmware_version = "Unavailable";
+			var firmware_manufac = "Unavailable";
+			var rssi = 255;
+
+			if (record_info.length > 7) {
+				firmware_vername = record_info[6];
+				firmware_version = record_info[7];
+				firmware_manufac = record_info[8];
+				rssi = record_info[9];
+			}
+
+			addDevice(name, "Calculating...", devclass_major + " (" + devclass_minor + ")", mac, getOwner(name), "default.png", rssi, "<" + rssi2distance(rssi) + "m", capabilities);
 			lookupVendorAndImg(name, devclass_major, devclass_minor, mac);
 		}
 	};
 
 	$("#btnScan").click(function() {
+		$("#btnScan").prop("disabled", true);
+		$("#btnScan")[0].innerHTML = "Scanning...";
+		clearMapCircles();
+
+
 		$("div[data-added-dev-info]").remove();		
 
 		$.ajax({
 			url: "/cgi-bin/devscan.cgi",
 			success: function(result) {
 				unloadScanResults(result);
+				$("#btnScan").prop("disabled", false);
+				$("#btnScan")[0].innerHTML = "Scan for devices";
 			},
 			error: function (x, e, y) {
 				alert("Oh snap: " + e + y);
+				$("#btnScan").prop("disabled", false);
+				$("#btnScan")[0].innerHTML = "Scan for devices";
 			}
 		}); 
 	});
@@ -374,6 +479,7 @@
             devInfoImgTemplate = Handlebars.compile($("#dev-imgbox").html());
             devInfoContainerTemplate = Handlebars.compile($("#dev-infocontainerbox").html());
             devDetectedBoxTemplate = Handlebars.compile($("#dev-detectedbox").html());
+	    logEntryTemplate = Handlebars.compile($("#log-detectionentry").html());
 
        /*
 	$.ajax({
@@ -413,7 +519,7 @@
 
 
         // Create the map.
-        var map = new google.maps.Map(document.getElementById('map'), {
+        map = new google.maps.Map(document.getElementById('map'), {
             zoom: 17,
             center: myLatLng,
             mapTypeId: google.maps.MapTypeId.TERRAIN
@@ -424,12 +530,12 @@
                 currentLocation = { lat: position.coords.latitude, lng: position.coords.longitude };
                 initialLocation = new google.maps.LatLng(position.coords.latitude, position.coords.longitude);
                 map.setCenter(initialLocation);
-                var marker = new google.maps.Marker({
+              /*  var marker = new google.maps.Marker({
                     map: map,
                     position: initialLocation,
                     title: 'Current Location',
                     zIndex: google.maps.Marker.MAX_ZINDEX + 1
-                });
+                }); */
             },
             function (e) {
                 var a = e;
