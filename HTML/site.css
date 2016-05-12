@@ -42,6 +42,14 @@ div#deviceOperationsView {
     background-color: rgba(255, 255, 255, 0.6);
 }
 
+#btnApplyFilter {
+	width: 50px;
+}
+
+#txtFilterMAC {
+	width: 150px;
+}
+
 div#detectionLog {
 	overflow: scroll;
 }

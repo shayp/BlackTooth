@@ -102,6 +102,11 @@
                 </p>
 
 		<p class="center-aligner"><b><u>Detection Log</b></u></p>
+		<div style="display: inline">	
+		<label>Filter MAC:</label>
+		<input type="text" id="txtFilterMAC">
+		<button id="btnApplyFilter">Apply</button>
+		</div>
 		<div id="detectionLog"></div>
             </div>
             <div id="map" class="col-md-5"></div>
@@ -438,6 +443,18 @@
 			lookupVendorAndImg(name, devclass_major, devclass_minor, mac);
 		}
 	};
+
+	$("#btnApplyFilter").click(function() {
+		var query_text = $("#txtFilterMAC").val();
+
+		if ("" == query_text) {
+			$("p[data-detected-mac]").show();
+		}
+		else {
+			$("p[data-detected-mac]").hide();
+			$("p[data-detected-mac=\'" + query_text + "\']").show();
+		}
+	});
 
 	$("#btnScan").click(function() {
 		$("#btnScan").prop("disabled", true);
