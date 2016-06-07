@@ -130,7 +130,7 @@ void main()
 	// ------ Pairing stuff ------
 	// "00:11:67:F8:8A:D1" - JAM Headphones
 	// "FC:58:FA:3A:49:08" - Perchik's bluetooth speaker
-	const char* dest1_mac = "FC:58:FA:3A:49:08";
+	const char* dest1_mac = "00:11:67:F8:8A:D1";
 	const char* dest2_mac = "78:D7:5F:A2:7E:4A";
 	const char* local_mac = "00:01:95:27:45:51";
 
@@ -162,7 +162,7 @@ void main()
 	// JAM Headphones: 1
 	// Perchik speakers: 3
 
-	int rfcomm_sock1 = -1, rfcomm_sock2 = -1, rfcomm_channel1 = 3, rfcomm_channel2 = 8, sco_sock, sco_conn_enabled = 0;
+	int rfcomm_sock1 = -1, rfcomm_sock2 = -1, rfcomm_channel1 = 1, rfcomm_channel2 = 8, sco_sock, sco_conn_enabled = 0;
 	int32_t recv_len = 0, packet_seq, audio_i, pkt_i, audio1_sent_amt = 0;
 	uint8_t* recv_buf = (uint8_t*)malloc(RECV_BUF_SIZE);
 	int sco_sock1 = -1, sco_sock2 = -1;
@@ -505,7 +505,7 @@ void main()
 
 		ag2hs = open("bt_ag2hs", O_WRONLY | O_CREAT, 0666);
 		hs2ag = open("bt_hs2ag", O_NONBLOCK | O_CREAT, 0666);
-		ag2hs_sco = open("bt_ag2hs_sco", O_WRONLY | O_CREAT, 0666);
+		ag2hs_sco = open("bt_ag2hs_sco", O_WRONLY | O_NONBLOCK | O_CREAT, 0666);
 		hs2ag_sco = open("bt_hs2ag_sco", O_NONBLOCK | O_CREAT, 0666);
 		ag2hs_sdp = open("bt_ag2hs_sdp", O_WRONLY | O_CREAT, 0666);
 		hs2ag_sdp = open("bt_hs2ag_sdp", O_NONBLOCK | O_CREAT, 0666);
@@ -516,8 +516,12 @@ void main()
 		ag2hs_audio = open("bt_ag2hs_audio", O_WRONLY | O_CREAT, 0666);
 		hs2ag_audio = open("bt_hs2ag_audio", O_NONBLOCK | O_CREAT, 0666);
 
+		if (fcntl(ag2hs_audio, F_SETFL, O_NONBLOCK) < 0)
+		{
+			printf("Failed to make ag2hs_audio fifo nonblocking\n");
+		}
+
 		printf("Server starting\n");
-		sleep(2);
 /*
 		accepter = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
 		remote2.rc_family = AF_BLUETOOTH;
@@ -559,6 +563,8 @@ void main()
 	else
 	{
 		is_server = 0;
+
+		sleep(2);
 
 		ag2hs = open("bt_ag2hs", O_NONBLOCK, 0666);
 		hs2ag = open("bt_hs2ag", O_WRONLY, 0666);
@@ -758,7 +764,7 @@ void main()
 					printf("Injected %d bytes into stream! %02x%02x%02x%02x\n", rb, recv_buf[16], recv_buf[17], recv_buf[18], recv_buf[19]);
 				}
 
-				if (write(ag2hs_audio, recv_buf, recv_len) < 0) printf("Failed to write to ag2hs_audio\n");
+				if (write(ag2hs_audio, recv_buf, recv_len) < 0) printf("Failed to write to ag2hs_audio[err %u - %s]\n", errno, strerror(errno));
 				memset(recv_buf, 0, RECV_BUF_SIZE);
 				usleep(1);
 			}
@@ -914,8 +920,6 @@ void main()
 				send_l2cap_fragmented(audio_sock1, recv_buf, recv_len, audio_sock1_omtu);
 			}
 			else*/
-
-			usleep(50);
 
 			if (recv_len <= audio_sock1_omtu)
 			{
