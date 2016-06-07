@@ -97,8 +97,8 @@
             <div id="deviceOperationsView" class="col-md-4">
                 <p class="center-aligner">
                     <b><u>Operations</u></b><br />
-                    <button>Save Traffic</button><br />
-                    <button>Attempt MITM</button><br />
+                    <button id="btnSaveTraffic" >Save Traffic</button><br />
+                    <button id="btnLoadTraffic" >Load Traffic</button><br />
                 </p>
 
 		<p class="center-aligner"><b><u>Detection Log</b></u></p>
@@ -454,6 +454,41 @@
 			$("p[data-detected-mac]").hide();
 			$("p[data-detected-mac=\'" + query_text + "\']").show();
 		}
+	});
+
+	$("#btnLoadTraffic").click(function() {
+
+		$.ajax({
+			url: "/cgi-bin/logger.cgi",
+			method: "POST",
+			data: "load",
+			success: function(result) {
+				$("#detectionLog")[0].innerHTML = "";
+				$("#detectionLog").append(result);
+			},
+			error: function (x, e, y) {
+				alert("Oh snap: " + e + y);
+				$("#btnLoadTraffic").prop("disabled", false);
+				$("#btnLoadTraffic")[0].innerHTML = "Scan for devices";
+			}
+		}); 
+
+	});
+
+	$("#btnSaveTraffic").click(function() {
+
+		$.ajax({
+			url: "/cgi-bin/logger.cgi",
+			method: "POST",
+			data: $("#detectionLog")[0].innerHTML,
+			success: function(result) {
+				alert("Traffic saved!");
+			},
+			error: function (x, e, y) {
+				alert("Oh snap: " + e + y);
+			}
+		}); 
+
 	});
 
 	$("#btnScan").click(function() {
