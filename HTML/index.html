@@ -63,7 +63,7 @@
                 </tr>
                 <tr>
                     <td class="dev-info-cell">Display Name</td>
-                    <td contenteditable="true" id="dev-displayname_{{bdaddr_u}}" class="dev-info-cell" oninput="refreshDisplayName('{{bdaddr}}')">{{displayname}}</td>
+                    <td contenteditable="true" id="dev-displayname_{{bdaddr_u}}" class="dev-info-cell" onblur="refreshDisplayName('{{bdaddr}}')">{{displayname}}</td>
                 </tr>
                 <tr>
                     <td class="dev-info-cell">Vendor</td>
@@ -242,9 +242,21 @@
         macDisplayNames[mac] = newname;
     }
 
-    function refreshDisplayName(mac) {
-        var newname = $("#dev-displayname_" + mac.replace(/:/g, "_"))[0].innerText;
+    function removeTags(str) {
+	while (-1 != str.indexOf("<") && -1 != str.indexOf(">")) {
+		var tag = str.substring(str.indexOf("<"), str.indexOf(">")+1);
+		str = str.replace(tag, '');
+	}	
 
+	return str;
+    }
+
+    function refreshDisplayName(mac) {
+        var newname = $("#dev-displayname_" + mac.replace(/:/g, "_"))[0].innerHTML;
+
+	newname = removeTags(newname);
+
+	$("#dev-displayname_" + mac.replace(/:/g, "_"))[0].innerHTML = newname;
         setDevDisplayName(mac, newname);
     }
     
