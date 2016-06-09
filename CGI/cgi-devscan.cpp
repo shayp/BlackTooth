@@ -331,7 +331,7 @@ int main(int argc, char **argv)
 
 		if (hci_read_remote_name(sock, &(ii+i)->bdaddr, sizeof(name), name, 0) < 0)
 		{
-			strcpy(name, "[NO-NAME]");
+			strcpy(name, "Unknown");
 		}
 
 		generate_class_string(ii[i].dev_class, class_string, sizeof(class_string));
@@ -377,7 +377,7 @@ int main(int argc, char **argv)
 			printf(",[NO-RSSI]");
 		else
 		{
-			printf(",%i", rssi);
+			printf(",%i\n", rssi);
 		}
 		
 	}

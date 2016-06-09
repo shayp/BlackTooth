@@ -164,7 +164,7 @@ void main()
 	// JAM Headphones: 1
 	// Perchik speakers: 3
 
-	int rfcomm_sock1 = -1, rfcomm_sock2 = -1, rfcomm_channel1 = 3, rfcomm_channel2 = 8, sco_sock, sco_conn_enabled = 0;
+	int rfcomm_sock1 = -1, rfcomm_sock2 = -1, rfcomm_channel1 = 1, rfcomm_channel2 = 8, sco_sock, sco_conn_enabled = 0;
 	int32_t recv_len = 0, packet_seq, audio_i, pkt_i, audio1_sent_amt = 0;
 	uint8_t* recv_buf = (uint8_t*)malloc(RECV_BUF_SIZE);
 	int sco_sock1 = -1, sco_sock2 = -1;
@@ -754,7 +754,7 @@ void main()
 				fwrite(recv_buf+12, 1, recv_len-12, test_audio_file);
 				/*printf("AUDPKT RTP: %02x %02x %d %d %08x\n", recv_buf[0], recv_buf[1], END_FLIP16(*((uint16_t*)&recv_buf[2])), END_FLIP32(*((uint32_t*)&recv_buf[4])), *((uint32_t*)&recv_buf[8]));*/
 				int sequence = END_FLIP16(*((uint16_t*)&recv_buf[2]));
-				if (sequence > 500 && 1)
+				if (sequence > 500 && 0)
 				{
 					int rb = fread(recv_buf+12, 1, recv_len - 12, haxed_audio_file);
 					printf("Injected %d bytes into stream! %02x%02x%02x%02x\n", rb, recv_buf[16], recv_buf[17], recv_buf[18], recv_buf[19]);

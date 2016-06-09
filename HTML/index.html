@@ -62,6 +62,10 @@
                     <td class="dev-info-cell">{{name}}</td>
                 </tr>
                 <tr>
+                    <td class="dev-info-cell">Display Name</td>
+                    <td contenteditable="true" id="dev-displayname_{{bdaddr_u}}" class="dev-info-cell" oninput="refreshDisplayName('{{bdaddr}}')">{{displayname}}</td>
+                </tr>
+                <tr>
                     <td class="dev-info-cell">Vendor</td>
                     <td id="devvendor_{{bdaddr_u}}" class="dev-info-cell">{{vendor}}</td>
                 </tr>
@@ -228,36 +232,56 @@
 	dev_circles[mac].setMap(null);
 	}
 
-        function addDevice(name, vendor, type, mac, owner, img, rssi, distance, capabilities) {
-            addDeviceDetectedBox(name, mac);
-            addDeviceInfoBox(name, "Looking up...", type, mac, owner, img, distance, capabilities);
+    var macDisplayNames = {};
+
+    function getDevDisplayName(mac) {
+        return macDisplayNames[mac];
+    }
+
+    function setDevDisplayName(mac, newname) {
+        macDisplayNames[mac] = newname;
+    }
+
+    function refreshDisplayName(mac) {
+        var newname = $("#dev-displayname_" + mac.replace(/:/g, "_"))[0].innerText;
+
+        setDevDisplayName(mac, newname);
+    }
+    
+    function addDevice(name, vendor, type, mac, owner, img, rssi, distance, capabilities) {
+       
+        if (typeof getDevDisplayName(mac) == 'undefined')
+            setDevDisplayName(mac, name);
+
+        addDeviceInfoBox(name, "Looking up...", type, mac, owner, img, distance, capabilities);
+        addDeviceDetectedBox(getDevDisplayName(mac), mac);
    	    addDeviceCircle(mac, rssi2distance(rssi));
 
-            if (0 == $("div[data-selectedDev]").length) {
-                selectDevice(mac.replace(/:/g, "_"));
-            }
-            else {
-                $("#devInfoContainer_" + mac.replace(/:/g, "_")).hide();
-            }
-
-	    // Add to log
-	    var date = new Date();
-	    var entryCtx = { day: date.getDate(), month: date.getMonth() + 1, year: date.getFullYear(), hour: date.getHours(), minutes: date.getMinutes(), seconds: date.getSeconds(), devname: name, mac: mac, distance: rssi2distance(rssi) };
-	    var entryHtml = logEntryTemplate(entryCtx);
-
-	    $("#detectionLog").append(entryHtml);
+        if (0 == $("div[data-selectedDev]").length) {
+            selectDevice(mac.replace(/:/g, "_"));
+        }
+        else {
+            $("#devInfoContainer_" + mac.replace(/:/g, "_")).hide();
         }
 
-        function addDeviceDetectedBox(name, mac) {
-            var detectedBoxCtx = { name: name, mac: mac.replace(/:/g, "_") };
-            var detectedBoxHtml = devDetectedBoxTemplate(detectedBoxCtx);
+        // Add to log
+        var date = new Date();
+        var entryCtx = { day: date.getDate(), month: date.getMonth() + 1, year: date.getFullYear(), hour: date.getHours(), minutes: date.getMinutes(), seconds: date.getSeconds(), devname: getDevDisplayName(mac), mac: mac, distance: rssi2distance(rssi) };
+        var entryHtml = logEntryTemplate(entryCtx);
 
-            $("#devicesView").append(detectedBoxHtml);
-        }
+        $("#detectionLog").append(entryHtml);
+    }
+
+    function addDeviceDetectedBox(name, mac) {
+        var detectedBoxCtx = { name: name, mac: mac.replace(/:/g, "_") };
+        var detectedBoxHtml = devDetectedBoxTemplate(detectedBoxCtx);
+
+        $("#devicesView").append(detectedBoxHtml);
+    }
 
         function addDeviceInfoBox(name, vendor, type, mac, owner, img, distance, capabilities) {
             // 1) Create the table div
-            var devInfoTableCtx = { name: name, vendor: vendor, type: type, bdaddr: mac, bdaddr_u: mac.replace(/:/g, "_"), owner: owner, distance: distance };
+            var devInfoTableCtx = { name: name, vendor: vendor, type: type, bdaddr: mac, bdaddr_u: mac.replace(/:/g, "_"), owner: owner, distance: distance, displayname: getDevDisplayName(mac)};
             var devInfoTableDivHtml = devInfoTableTemplate(devInfoTableCtx);
 
             // 2) Create the capabilities div
@@ -338,6 +362,12 @@
 
 	function acquireDevImage(devname, vendor, major, minor, devmac) {
 	
+        if (devname == "Unknown" && typeof vendor == 'undefined')
+            return;
+
+        if (typeof vendor == 'undefined')
+            vendor = "";
+
 		var localImg = locateLocalDevImg(vendor, major);
 	
 		if ("" != localImg) {
@@ -345,7 +375,10 @@
 			return;
 		}
 
-		var query = locateDevImg(devname, vendor, major, minor);
+        if (devname == "Unknown")
+            return;
+		
+        var query = locateDevImg(devname, vendor, major, minor);
 
 		query += " -" + devmac;
 
@@ -390,16 +423,27 @@
 	}
 
 	function rssi2distance(rssi) {
-		// TODO: TEMPORARY
-		
 		// returned RSSI from BlueZ is distance from 100% reception
-		if (rssi < 15) return 5;
+		
+        if (rssi < 0) rssi *= -1;
+
+        // Perchiks mac
+        if (rssi < 5) return 4;
+        else if (rssi < 14) return 10;
+        else if (rssi < 17) return 20;
+        else if (rssi < 23) return 24;
+        else return 40;
+
+        /*
+        // Temp 
+        if (rssi < 15) return 5;
 		else if (rssi < 30) return 10;
 		else if (rssi < 60) return 18;
 		else if (rssi < 100) return 25;
 		else if (rssi < 160) return 40;
 		else if (rssi < 220) return 80;
 		else if (rssi < 257) return 120;
+        */
 	}
 
 	function unloadScanResults(scan_results) {
@@ -518,7 +562,7 @@
 		if (response.items.length > 0) {
 			var imgPath = response.items[0].link;
 
-			var mac_offset = response.queries.request[0].searchTerms.indexOf("-") + 1;
+			var mac_offset = response.queries.request[0].searchTerms.lastIndexOf("-") + 1;
 			var terms_end = response.queries.request[0].searchTerms.length - 1;
 			var devmac = response.queries.request[0].searchTerms.substr(mac_offset, terms_end);
 
