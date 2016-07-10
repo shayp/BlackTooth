@@ -1,7 +1,5 @@
 # BlackTooth
-
 BlackTooth is a set of tools to scan and attack Bluetooth devices.
-
 ## scanner
 Scripts for scanning in real time
 * CGI/
@@ -13,17 +11,13 @@ Include all the HTML & JavaScript Code for the scanner UI
     
     * Index.html - the html page of the scan
     * scripts/ - all the JavaScript scripts: Maps, images, mac resolve etc'
-
 ## Dual pair MITM
 Include the MITM code for sniffing and attacking audio & telephone bluetooth protocols.
 The attack works for both audio & telephone.
 * dual_pair/
     * restart.sh - compile and run the MITM sniifer & Attacker
     * dual_pair.c - The MITM code for sniffing and attacking
-
-
 ## Setup
-
 * scanning devices
     * run ./CGI/refresh_apache.sh
     * open your browswer at 127.0.0.1 :)
@@ -34,3 +28,6 @@ The attack works for both audio & telephone.
         * local_mac - the MITM attacker mac(our mac)
         *  rfcomm_channel1, rfcomm_channel2 -   Update to the device const value
     * Run restart.sh :)
+## Authors
+* Amir Barak
+* Shay Perchik
